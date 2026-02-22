@@ -18,6 +18,7 @@ class Voyager:
     def __init__(
         self,
         mc_port: int = None,
+        mc_host: str = "localhost",
         azure_login: Dict[str, str] = None,
         server_port: int = 3000,
         openai_api_key: str = None,
@@ -103,6 +104,7 @@ class Voyager:
         # init env
         self.env = VoyagerEnv(
             mc_port=mc_port,
+            mc_host=mc_host,
             azure_login=azure_login,
             server_port=server_port,
             request_timeout=env_request_timeout,
@@ -203,7 +205,7 @@ class Voyager:
     def step(self):
         if self.action_agent_rollout_num_iter < 0:
             raise ValueError("Agent must be reset before stepping")
-        ai_message = self.action_agent.llm(self.messages)
+        ai_message = self.action_agent.llm.invoke(self.messages)
         print(f"\033[34m****Action Agent ai message****\n{ai_message.content}\033[0m")
         self.conversations.append(
             (self.messages[0].content, self.messages[1].content, ai_message.content)

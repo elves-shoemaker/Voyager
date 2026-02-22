@@ -10,15 +10,25 @@ import gymnasium as gym
 from gymnasium.core import ObsType
 
 import voyager.utils as U
-
 from .minecraft_launcher import MinecraftInstance
 from .process_monitor import SubprocessMonitor
+
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
+def send_discord(msg):
+    if not DISCORD_WEBHOOK_URL:
+        return
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=5)
+    except:
+        pass
 
 
 class VoyagerEnv(gym.Env):
     def __init__(
         self,
         mc_port=None,
+        mc_host="localhost",
         azure_login=None,
         server_host="http://127.0.0.1",
         server_port=3000,
@@ -32,6 +42,7 @@ class VoyagerEnv(gym.Env):
                 "Both mc_port and mc_login are specified, mc_port will be ignored"
             )
         self.mc_port = mc_port
+        self.mc_host = mc_host
         self.azure_login = azure_login
         self.server = f"{server_host}:{server_port}"
         self.server_port = server_port
@@ -140,6 +151,7 @@ class VoyagerEnv(gym.Env):
             raise RuntimeError("inventory can only be set when options is hard")
 
         self.reset_options = {
+            "host": self.mc_host,
             "port": self.mc_port,
             "reset": options.get("mode", "hard"),
             "inventory": options.get("inventory", {}),

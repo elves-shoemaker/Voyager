@@ -5,6 +5,7 @@ const mineflayer = require("mineflayer");
 
 const skills = require("./lib/skillLoader");
 const { initCounter, getNextTime } = require("./lib/utils");
+const { emitDiscordWebhook } = require("./lib/discord");
 const obs = require("./lib/observation/base");
 const OnChat = require("./lib/observation/onChat");
 const OnError = require("./lib/observation/onError");
@@ -19,15 +20,22 @@ let bot = null;
 
 const app = express();
 
+app.get("/test", (req, res) => {
+    console.log(">>> /test called");
+    res.json({ ok: true });
+});
+
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: false }));
 
 app.post("/start", (req, res) => {
+    console.log(">>> /start called, body:", JSON.stringify(req.body));
+    try {
     if (bot) onDisconnect("Restarting bot");
     bot = null;
     console.log(req.body);
     bot = mineflayer.createBot({
-        host: "localhost", // minecraft server ip
+        host: req.body.host || "localhost", // minecraft server ip
         port: req.body.port, // minecraft server port
         username: "bot",
         disableChatSigning: true,
@@ -36,7 +44,7 @@ app.post("/start", (req, res) => {
     bot.once("error", onConnectionFailed);
 
     // Event subscriptions
-    bot.waitTicks = req.body.waitTicks;
+    bot.waitTicks = req.body.waitTicks || 20;
     bot.globalTickCounter = 0;
     bot.stuckTickCounter = 0;
     bot.stuckPosList = [];
@@ -50,6 +58,7 @@ app.post("/start", (req, res) => {
     });
 
     bot.once("spawn", async () => {
+        emitDiscordWebhook(`[VOYAGER] Bot spawned at position: ${bot.entity.position}`);
         bot.removeListener("error", onConnectionFailed);
         let itemTicks = 1;
         if (req.body.reset === "hard") {
@@ -99,12 +108,10 @@ app.post("/start", (req, res) => {
         const tool = require("mineflayer-tool").plugin;
         const collectBlock = require("mineflayer-collectblock").plugin;
         const pvp = require("mineflayer-pvp").plugin;
-        const minecraftHawkEye = require("minecrafthawkeye");
         bot.loadPlugin(pathfinder);
         bot.loadPlugin(tool);
         bot.loadPlugin(collectBlock);
         bot.loadPlugin(pvp);
-        bot.loadPlugin(minecraftHawkEye);
 
         // bot.collectBlock.movements.digCost = 0;
         // bot.collectBlock.movements.placeCost = 0;
@@ -147,9 +154,22 @@ app.post("/start", (req, res) => {
         console.log(message);
         bot = null;
     }
+    } catch (err) {
+        console.error(">>> /start error:", err);
+        if (res && res.status) {
+            res.status(500).json({ error: String(err) });
+        }
+    }
 });
 
 app.post("/step", async (req, res) => {
+    // Discord通知エンドポイント
+    if (req.body.discord_message) {
+        emitDiscordWebhook(req.body.discord_message);
+        res.json({ ok: true });
+        return;
+    }
+
     // import useful package
     let response_sent = false;
     function otherError(err) {
@@ -420,6 +440,6 @@ app.post("/pause", (req, res) => {
 
 const DEFAULT_PORT = 3000;
 const PORT = process.argv[2] || DEFAULT_PORT;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server started on port ${PORT}`);
 });

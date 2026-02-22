@@ -1,10 +1,31 @@
 import os
 
 import voyager.utils as U
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.vectorstores import Chroma
+from langchain_openai import ChatOpenAI
+from langchain_core.embeddings import Embeddings
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_chroma import Chroma
+import requests
+
+
+class DirectStringEmbeddings(Embeddings):
+    def __init__(self, model: str, api_key: str, api_base: str):
+        self.model = model
+        self.api_key = api_key
+        self.api_base = api_base
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        response = requests.post(
+            f"{self.api_base}/embeddings",
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            json={"model": self.model, "input": text},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()["data"][0]["embedding"]
 
 from voyager.prompts import load_prompt
 from voyager.control_primitives import load_control_primitives
@@ -37,9 +58,16 @@ class SkillManager:
             self.skills = {}
         self.retrieval_top_k = retrieval_top_k
         self.ckpt_dir = ckpt_dir
+        embedding_api_key = os.getenv("OPENAI_EMBEDDING_API_KEY", os.getenv("OPENAI_API_KEY", "dummy-key"))
+        embedding_api_base = os.getenv("OPENAI_EMBEDDING_API_BASE", os.getenv("OPENAI_API_BASE", "http://localhost:1234/v1"))
+        embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL_NAME", "text-embedding-ada-002")
         self.vectordb = Chroma(
             collection_name="skill_vectordb",
-            embedding_function=OpenAIEmbeddings(),
+            embedding_function=DirectStringEmbeddings(
+                model=embedding_model,
+                api_key=embedding_api_key,
+                api_base=embedding_api_base,
+            ),
             persist_directory=f"{ckpt_dir}/skill/vectordb",
         )
         assert self.vectordb._collection.count() == len(self.skills), (
@@ -97,7 +125,6 @@ class SkillManager:
             f"{self.ckpt_dir}/skill/description/{dumped_program_name}.txt",
         )
         U.dump_json(self.skills, f"{self.ckpt_dir}/skill/skills.json")
-        self.vectordb.persist()
 
     def generate_skill_description(self, program_name, program_code):
         messages = [
@@ -108,7 +135,7 @@ class SkillManager:
                 + f"The main function is `{program_name}`."
             ),
         ]
-        skill_description = f"    // { self.llm(messages).content}"
+        skill_description = f"    // { self.llm.invoke(messages).content}"
         return f"async function {program_name}(bot) {{\n{skill_description}\n}}"
 
     def retrieve_skills(self, query):

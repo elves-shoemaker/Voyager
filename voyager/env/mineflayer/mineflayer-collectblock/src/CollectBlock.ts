@@ -191,6 +191,7 @@ async function mineBlock(
 
     await bot.tool.equipForBlock(block, equipToolOptions);
 
+    // @ts-ignore
     if (!block.canHarvest(bot.heldItem ? bot.heldItem.type : bot.heldItem)) {
         options.targets.removeTarget(block);
         throw error("NoItem", "Bot does not have a harvestable tool!");
@@ -399,7 +400,6 @@ export class CollectBlock {
         } catch (err) {
             this.targets.clear();
             // Ignore path stopped error for cancelTask to work properly (imo we shouldn't throw any pathing errors)
-            // @ts-expect-error
             if (err.name !== "PathStopped") throw err;
         } finally {
             // @ts-expect-error
